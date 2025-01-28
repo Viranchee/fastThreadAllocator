@@ -39,8 +39,8 @@ using namespace std;
 #define NUMTHREADS 64
 // 1024*1024 Threads
 #define BLOCKSIZE 1
-#define NUMBLOCKS 1048576
-#define NUMTHREADS_IN_ALLOCATION 2048
+#define MAXBLOCKS 1048576
+#define NUMBLOCKS_IN_ALLOCATION 2048
 
 class FlashBlockAllocator {
 public:
@@ -61,9 +61,9 @@ public:
 
   void deallocate(void *block) {
     thread_freeList.push_back(block);
-    if (thread_freeList.size() > NUMTHREADS_IN_ALLOCATION * 2) {
+    if (thread_freeList.size() > NUMBLOCKS_IN_ALLOCATION * 2) {
       vector<void *> freePool;
-      for (int i = 0; i < NUMTHREADS_IN_ALLOCATION; i++) {
+      for (int i = 0; i < NUMBLOCKS_IN_ALLOCATION; i++) {
         freePool.push_back(thread_freeList.back());
         thread_freeList.pop_back();
       }
@@ -79,30 +79,41 @@ private:
   // FIXME: Remove below line before submission
   // static thread_local
   vector<void *> thread_freeList;
-  vector<vector<void *>> global_freeListBatch; // Use atomics here
+  vector<vector<void *>> global_freeListBatch; // Use mutex here
+  mutex global_freeListMutex;
 
   bool get2kFreeList() {
+    if (global_freeListBatch.empty() && !allocate2kBlocks()) {
+      return false;
+    }
+    lock_guard<mutex> lock(global_freeListMutex);
     auto last = global_freeListBatch.back();
     global_freeListBatch.pop_back();
     thread_freeList.insert(thread_freeList.end(), last.begin(), last.end());
     return true;
   }
   // get 2k more blocks
-  bool get2kBlocks() {
-    vector<void *> freeList;
-    for (int i = 0; i < NUMTHREADS_IN_ALLOCATION; i++) {
+  bool allocate2kBlocks() {
+    if (allocations > MAXBLOCKS / NUMBLOCKS_IN_ALLOCATION) {
+      return false;
+    }
+    vector<void *> thread_freeList;
+    for (int i = 0; i < NUMBLOCKS_IN_ALLOCATION; i++) {
       // Allocate 2k blocks
       void *block = malloc(blockSize);
       if (!block) {
         return false;
       }
-      freeList.push_back(block);
+      thread_freeList.push_back(block);
     }
-    global_freeListBatch.push_back(freeList);
+    lock_guard<mutex> lock(global_freeListMutex);
+    global_freeListBatch.push_back(thread_freeList);
+    allocations++;
     return true;
   }
 
   bool free2kBlocks(vector<void *> &blocks) {
+    lock_guard<mutex> lock(global_freeListMutex);
     global_freeListBatch.push_back(blocks);
     return true;
   }
@@ -110,7 +121,7 @@ private:
 
 int main() {
   // 64 threads
-  auto allocator = FlashBlockAllocator(BLOCKSIZE, NUMBLOCKS);
+  auto allocator = FlashBlockAllocator(BLOCKSIZE, MAXBLOCKS);
   vector<thread> threads;
   for (int i = 0; i < NUMTHREADS; i++) {
     threads.push_back(thread([&allocator]() {

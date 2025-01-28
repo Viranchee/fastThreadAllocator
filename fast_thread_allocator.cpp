@@ -30,6 +30,10 @@ Looks like a Good tradeoff.
 
 Those global memory allocation calls can be synced via either Atomics, Locks,
 Semaphore/Mutexes, etc
+
+Instead of 1024*1024 new / malloc calls, just make a batched new call, and
+divide the addresses. That way it's a slab allocation. We save space in ptr
+metadata.
 */
 
 #include <thread>
@@ -84,7 +88,7 @@ private:
 
   bool get2kFreeList() {
     if (global_freeListBatch.empty() && !allocate2kBlocks()) {
-      return false;
+      throw runtime_error("Failed to allocate 2k blocks");
     }
     lock_guard<mutex> lock(global_freeListMutex);
     auto last = global_freeListBatch.back();
@@ -94,19 +98,20 @@ private:
   }
   // get 2k more blocks
   bool allocate2kBlocks() {
+    lock_guard<mutex> lock(global_freeListMutex);
     if (allocations > MAXBLOCKS / NUMBLOCKS_IN_ALLOCATION) {
       return false;
     }
     vector<void *> thread_freeList;
+    void *bigBlock = malloc(blockSize);
+    if (!bigBlock) {
+      return false;
+    }
     for (int i = 0; i < NUMBLOCKS_IN_ALLOCATION; i++) {
       // Allocate 2k blocks
-      void *block = malloc(blockSize);
-      if (!block) {
-        return false;
-      }
-      thread_freeList.push_back(block);
+      auto offset = i * blockSize;
+      thread_freeList.push_back((char *)bigBlock + offset);
     }
-    lock_guard<mutex> lock(global_freeListMutex);
     global_freeListBatch.push_back(thread_freeList);
     allocations++;
     return true;

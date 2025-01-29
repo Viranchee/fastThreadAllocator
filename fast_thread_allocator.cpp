@@ -89,10 +89,10 @@ private:
   mutex global_freeListMutex;
 
   bool get2kFreeList() {
+    lock_guard<mutex> lock(global_freeListMutex);
     if (global_freeListBatch.empty() && !allocate2kBlocks()) {
       throw runtime_error("Failed to allocate 2k blocks");
     }
-    lock_guard<mutex> lock(global_freeListMutex);
     auto last = global_freeListBatch.back();
     global_freeListBatch.pop_back();
     thread_freeList.insert(thread_freeList.end(), last.begin(), last.end());
@@ -100,7 +100,6 @@ private:
   }
   // get 2k more blocks
   bool allocate2kBlocks() {
-    lock_guard<mutex> lock(global_freeListMutex);
     if (allocations > MAXBLOCKS / NUMBLOCKS_IN_ALLOCATION) {
       return false;
     }

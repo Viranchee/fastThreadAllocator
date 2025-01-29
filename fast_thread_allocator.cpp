@@ -36,8 +36,11 @@ divide the addresses. That way it's a slab allocation. We save space in ptr
 metadata.
 */
 
+#include <iostream>
+#include <mutex>
 #include <thread>
 #include <vector>
+
 using namespace std;
 
 #define NUMTHREADS 64
@@ -81,8 +84,7 @@ private:
   int allocations = 0;
   // Thread Local Free List
   // FIXME: Remove below line before submission
-  // static thread_local
-  vector<void *> thread_freeList;
+  static thread_local vector<void *> thread_freeList;
   vector<vector<void *>> global_freeListBatch; // Use mutex here
   mutex global_freeListMutex;
 

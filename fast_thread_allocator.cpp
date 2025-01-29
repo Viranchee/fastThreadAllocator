@@ -35,7 +35,6 @@ Instead of 1024*1024 new / malloc calls, just make a batched new call, and
 divide the addresses. That way it's a slab allocation. We save space in ptr
 metadata.
 */
-
 #include <iostream>
 #include <mutex>
 #include <thread>
@@ -44,23 +43,21 @@ metadata.
 using namespace std;
 
 #define NUMTHREADS 64
-// 1024*1024 Threads
-#define BLOCKSIZE 1
+#define BLOCKSIZE 64
 #define MAXBLOCKS 1048576
 #define NUMBLOCKS_IN_ALLOCATION 2048
 
 class FlashBlockAllocator {
 public:
   FlashBlockAllocator(int blockSize, int numBlocks)
-      : blockSize(blockSize), numBlocks(numBlocks) {
-    // Allocate 2k blocks for each thread
-  }
+      : blockSize(blockSize), numBlocks(numBlocks) {}
 
   void setup() { get2kFreeList(); }
 
   void *allocate() {
-    // If no blocks left, get 2k more blocks
-    thread_freeList.empty() && get2kFreeList();
+    if (thread_freeList.empty()) {
+      get2kFreeList();
+    }
     void *last = thread_freeList.back();
     thread_freeList.pop_back();
     return last;
@@ -78,14 +75,18 @@ public:
     }
   }
 
+  ~FlashBlockAllocator() {
+    for (auto &batch : global_freeListBatch) {
+      free(batch[0]); // Free the entire allocated slab
+    }
+  }
+
 private:
   const int numBlocks;
   const int blockSize;
   int allocations = 0;
-  // Thread Local Free List
-  // FIXME: Remove below line before submission
   static thread_local vector<void *> thread_freeList;
-  vector<vector<void *>> global_freeListBatch; // Use mutex here
+  vector<vector<void *>> global_freeListBatch;
   mutex global_freeListMutex;
 
   bool get2kFreeList() {
@@ -93,49 +94,53 @@ private:
     if (global_freeListBatch.empty() && !allocate2kBlocks()) {
       throw runtime_error("Failed to allocate 2k blocks");
     }
-    auto last = global_freeListBatch.back();
+    auto last = move(global_freeListBatch.back());
     global_freeListBatch.pop_back();
     thread_freeList.insert(thread_freeList.end(), last.begin(), last.end());
     return true;
   }
-  // get 2k more blocks
+
   bool allocate2kBlocks() {
-    if (allocations > MAXBLOCKS / NUMBLOCKS_IN_ALLOCATION) {
+    if (allocations >= MAXBLOCKS / NUMBLOCKS_IN_ALLOCATION) {
       return false;
     }
-    vector<void *> thread_freeList;
-    void *bigBlock = malloc(blockSize);
+    vector<void *> newBlockList;
+    void *bigBlock = malloc(NUMBLOCKS_IN_ALLOCATION * blockSize);
     if (!bigBlock) {
       return false;
     }
     for (int i = 0; i < NUMBLOCKS_IN_ALLOCATION; i++) {
-      // Allocate 2k blocks
-      auto offset = i * blockSize;
-      thread_freeList.push_back((char *)bigBlock + offset);
+      newBlockList.push_back(static_cast<char *>(bigBlock) + i * blockSize);
     }
-    global_freeListBatch.push_back(thread_freeList);
+    global_freeListBatch.push_back(move(newBlockList));
     allocations++;
     return true;
   }
 
   bool free2kBlocks(vector<void *> &blocks) {
     lock_guard<mutex> lock(global_freeListMutex);
-    global_freeListBatch.push_back(blocks);
+    global_freeListBatch.push_back(move(blocks));
     return true;
   }
 };
 
+thread_local vector<void *> FlashBlockAllocator::thread_freeList;
+
 int main() {
-  // 64 threads
-  auto allocator = FlashBlockAllocator(BLOCKSIZE, MAXBLOCKS);
+  FlashBlockAllocator allocator(BLOCKSIZE, MAXBLOCKS);
   vector<thread> threads;
+
   for (int i = 0; i < NUMTHREADS; i++) {
-    threads.push_back(thread([&allocator]() {
+    threads.emplace_back([&allocator]() {
       allocator.setup();
-      // Do some work
-    }));
+      void *ptr = allocator.allocate();
+      allocator.deallocate(ptr);
+    });
   }
+
   for (auto &t : threads) {
     t.join();
   }
+
+  return 0;
 }

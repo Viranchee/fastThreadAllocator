@@ -125,22 +125,3 @@ private:
 };
 
 thread_local vector<void *> FlashBlockAllocator::thread_freeList;
-
-int main() {
-  FlashBlockAllocator allocator(BLOCKSIZE, MAXBLOCKS);
-  vector<thread> threads;
-
-  for (int i = 0; i < NUMTHREADS; i++) {
-    threads.emplace_back([&allocator]() {
-      allocator.setup();
-      void *ptr = allocator.allocate();
-      allocator.deallocate(ptr);
-    });
-  }
-
-  for (auto &t : threads) {
-    t.join();
-  }
-
-  return 0;
-}

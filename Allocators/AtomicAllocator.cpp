@@ -43,6 +43,7 @@ void *AtomicAllocator::allocate() {
   }
   return head;
 }
+
 void AtomicAllocator::deallocate(void *block) {
   // flush local free list if greater than threshold
   int threshold = setup.threadLocalFill * setup.giveBackToGlobalRatio;
@@ -60,4 +61,5 @@ void AtomicAllocator::deallocate(void *block) {
   freeListLocal = headL;
   countLocal++;
 }
+
 AtomicAllocator::~AtomicAllocator() { blocks.release(); }

@@ -60,6 +60,4 @@ void AtomicAllocator::deallocate(void *block) {
   freeListLocal = headL;
   countLocal++;
 }
-AtomicAllocator::~AtomicAllocator() {
-  // Since using unique_ptr, no need to delete.
-}
+AtomicAllocator::~AtomicAllocator() { blocks.release(); }

@@ -8,6 +8,7 @@ class AtomicAllocator : public Allocator {
 public:
   struct Setup {
     int threadLocalFill = 1024;
+    float giveBackToGlobalRatio = 1.50;
   };
 
   AtomicAllocator(uint blockSize, uint maxBlocks);
@@ -23,6 +24,7 @@ private:
 
   std::unique_ptr<Block[]> blocks; // memory pool
   std::atomic<Block *> freeListGlobal;
+  std::atomic<Block *> freeListTailGlobal;
   std::atomic<int> countGlobal;
 
   static thread_local Block *freeListLocal;

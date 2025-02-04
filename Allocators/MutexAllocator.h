@@ -13,21 +13,18 @@ public:
 
   MutexAllocator(uint blockSize, uint maxBlocks);
   MutexAllocator(uint blockSize, uint maxBlocks, Setup setup);
+  // Allocates from the head of threadLocal list. Refills from head of Global
+  // list.
   void *allocate() override;
+  // Deallocates to head of threadLocal list. Refills to tail of Global list.
   void deallocate(void *block) override;
   ~MutexAllocator() override;
 
 private:
-  struct Block {
-    Block *next;
-  };
-
   std::unique_ptr<Block[]> blocks; // memory pool
   Block *freeListGlobal, *freeListTailGlobal;
   int countGlobal;
   std::mutex mtx;
 
-  static thread_local Block *freeListLocal;
-  static thread_local int countLocal;
   const Setup setup;
 };

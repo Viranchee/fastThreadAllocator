@@ -62,4 +62,4 @@ void AtomicAllocator::deallocate(void *block) {
   countLocal++;
 }
 
-AtomicAllocator::~AtomicAllocator() { blocks.release(); }
+AtomicAllocator::~AtomicAllocator() = default;

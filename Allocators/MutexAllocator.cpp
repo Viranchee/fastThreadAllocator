@@ -61,4 +61,4 @@ void MutexAllocator::deallocate(void *block) {
   countLocal++;
 }
 
-MutexAllocator::~MutexAllocator() { blocks.release(); }
+MutexAllocator::~MutexAllocator() = default;

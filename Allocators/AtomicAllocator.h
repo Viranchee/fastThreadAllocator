@@ -18,16 +18,10 @@ public:
   ~AtomicAllocator() override;
 
 private:
-  struct Block {
-    Block *next;
-  };
-
   std::unique_ptr<Block[]> blocks; // memory pool
   std::atomic<Block *> freeListGlobal;
   std::atomic<Block *> freeListTailGlobal;
   std::atomic<int> countGlobal;
 
-  static thread_local Block *freeListLocal;
-  static thread_local int countLocal;
   const Setup setup;
 };
